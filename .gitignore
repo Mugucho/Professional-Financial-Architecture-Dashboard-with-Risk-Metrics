@@ -1,0 +1,12 @@
+# Entornos virtuales (Esta es la causa del error)
+venv/
+env/
+.env
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Archivos de sistema y VS Code
+.vscode/
+.DS_Store
