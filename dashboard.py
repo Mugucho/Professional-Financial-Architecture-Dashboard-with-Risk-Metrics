@@ -11,12 +11,15 @@ from src.visualizations import (
     create_rsi_chart,
 )
 
+# IMPORTANTE: Importamos el motor de simulación
+from src.mini_platform import run_simulation
+
 st.set_page_config(page_title="Financial Architect Dashboard", layout="wide")
 
 # Sidebar
 st.sidebar.title("🛠️ Configuración")
 ticker = st.sidebar.text_input("Ticker Symbol", value="AAPL").upper()
-ma_window = st.sidebar.slider("Ventana Media Móvil", 5, 200, 50)
+ma_window = st.sidebar.slider("Ventana Media Móvil (SMA)", 5, 200, 50)
 
 st.title(f"🏛️ Arquitecto Financiero: {ticker}")
 st.markdown("---")
@@ -45,8 +48,14 @@ if ticker:
         st.markdown("---")
 
         # --- SECCIÓN 2: PESTAÑAS ---
-        t1, t2, t3 = st.tabs(
-            ["📊 Análisis Técnico", "⚠️ Riesgo y Volumen", "📑 Datos Brutos"]
+        # Añadimos la pestaña de Simulación de Bot
+        t1, t2, t3, t4 = st.tabs(
+            [
+                "📊 Análisis Técnico",
+                "⚠️ Riesgo y Volumen",
+                "🤖 Trading Bot Simulation",
+                "📑 Datos Brutos",
+            ]
         )
 
         with t1:
@@ -72,6 +81,27 @@ if ticker:
             st.plotly_chart(create_high_low_chart(data), use_container_width=True)
 
         with t3:
+            st.subheader("Simulación de Estrategia Minimalista")
+            st.info("Estrategia: COMPRA si Precio > SMA, VENDE si Precio < SMA.")
+
+            # Botón para ejecutar el pipeline
+            if st.button("🚀 Ejecutar Backtest"):
+                ledger, final_pos, final_cash = run_simulation(data)
+
+                # Resumen de resultados
+                c1, c2 = st.columns(2)
+                c1.success(f"**Posición Final:** {final_pos} unidades")
+                c2.warning(f"**Balance de Caja Final:** ${final_cash:,.2f}")
+
+                if ledger:
+                    st.markdown("### Ledger (Últimos 10 trades)")
+                    # Convertimos la lista de dataclasses en un DataFrame para mostrarlo mejor
+                    ledger_df = pd.DataFrame([vars(t) for t in ledger])
+                    st.dataframe(ledger_df.tail(10), use_container_width=True)
+                else:
+                    st.write("No se realizaron operaciones en este periodo.")
+
+        with t4:
             st.dataframe(
                 data.sort_values(by="Date", ascending=False), use_container_width=True
             )
