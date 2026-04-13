@@ -1,7 +1,6 @@
-yfinance
-matplotlib
-pandas
-mplfinance
-datetime
 streamlit
+pandas
+yfinance
 plotly
+numpy
+pandas_ta

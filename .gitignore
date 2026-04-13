@@ -1,12 +1,33 @@
-# Entornos virtuales (Esta es la causa del error)
-venv/
-env/
+# --- SEGURIDAD (Crítico) ---
+# Archivo de variables de entorno con tus API Keys de Alpaca
 .env
 
-# Caché de Python
+# --- ENTORNOS VIRTUALES ---
+# No subir las librerías instaladas localmente
+venv/
+env/
+ENV/
+bin/
+lib/
+include/
+
+# --- CACHÉ DE PYTHON ---
+# Archivos temporales de compilación
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Archivos de sistema y VS Code
+# --- IDEs Y SISTEMA ---
+# Configuraciones de VS Code y archivos de sistema
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
+
+# --- DATOS Y LOGS ---
+# Evitar subir datos pesados o registros de errores
+*.log
+*.csv
+*.json
+*.db

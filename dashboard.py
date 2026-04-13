@@ -9,99 +9,158 @@ from src.visualizations import (
     create_volume_vs_close_scatter,
     create_high_low_chart,
     create_rsi_chart,
+    create_patterns_only_chart,
+)
+from src.mini_platform import (
+    run_simulation,
+    AlpacaExecutor,
+    ALPACA_AVAILABLE,
+    TradingEngine,
 )
 
-# IMPORTANTE: Importamos el motor de simulación
-from src.mini_platform import run_simulation
-
+# 1. Configuración de la página (Debe ser la primera instrucción de Streamlit)
 st.set_page_config(page_title="Financial Architect Dashboard", layout="wide")
 
-# Sidebar
-st.sidebar.title("🛠️ Configuración")
-ticker = st.sidebar.text_input("Ticker Symbol", value="AAPL").upper()
+# 2. Barra Lateral (Sidebar) - Configuración y Credenciales
+st.sidebar.title("🏛️ Configuración")
+ticker = st.sidebar.text_input("Símbolo Ticker", value="AAPL").upper()
 ma_window = st.sidebar.slider("Ventana Media Móvil (SMA)", 5, 200, 50)
+sl_input = st.sidebar.slider("Stop Loss %", 1, 20, 5) / 100
 
-st.title(f"🏛️ Arquitecto Financiero: {ticker}")
+st.sidebar.markdown("---")
+with st.sidebar.expander("🔑 Conexión Broker (Alpaca)"):
+    api_key = st.text_input("API Key ID", type="password")
+    secret_key = st.text_input("Secret Key", type="password")
+    paper_mode = st.checkbox("Modo Paper Trading", value=True)
+
+# 3. Encabezado Principal
+st.title(f"Dashboard de Análisis y Ejecución: {ticker}")
 st.markdown("---")
 
 if ticker:
+    # Obtención de datos desde Yahoo Finance
     data = fetch_stock_data(ticker)
 
-    if data.empty:
-        st.error("Error: No se encontraron datos para el ticker ingresado.")
-    else:
-        # Preparación de datos
+    if not data.empty:
+        # Procesamiento y limpieza de datos
         data = data.reset_index()
-        data["Date"] = pd.to_datetime(data["Date"]).dt.tz_localize(None)
+        if data["Date"].dt.tz is not None:
+            data["Date"] = data["Date"].dt.tz_localize(None)
+
         data = process_data(data, ma_window)
 
-        # --- SECCIÓN 1: MÉTRICAS (KPIs) ---
-        last_price = data["Close"].iloc[-1]
-        last_ret = data["Daily Return"].iloc[-1] * 100
-        vol = data["Volatility"].iloc[-1]
+        # KPIs Principales en la parte superior
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Precio Cierre", f"${data['Close'].iloc[-1]:.2f}")
+        m2.metric("Retorno Diario", f"{data['Daily Return'].iloc[-1]*100:.2f}%")
+        # Identificar dinámicamente la columna RSI calculada por pandas_ta
+        rsi_col = [c for c in data.columns if "RSI" in c][-1]
+        m3.metric("RSI (14)", f"{data[rsi_col].iloc[-1]:.2f}")
+        m4.metric("Volatilidad Anual", f"{data['Volatility'].iloc[-1]:.2%}")
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Precio Actual", f"${last_price:,.2f}")
-        m2.metric("Cambio Diario", f"{last_ret:.2f}%", delta=f"{last_ret:.2f}%")
-        m3.metric("Riesgo (Volatilidad)", f"{vol:.2%}")
-
-        st.markdown("---")
-
-        # --- SECCIÓN 2: PESTAÑAS ---
-        # Añadimos la pestaña de Simulación de Bot
-        t1, t2, t3, t4 = st.tabs(
+        # Organización por pestañas (Tabs)
+        t1, t2, t3, t4, t5 = st.tabs(
             [
                 "📊 Análisis Técnico",
+                "🕯️ Patrones Candlestick",
                 "⚠️ Riesgo y Volumen",
-                "🤖 Trading Bot Simulation",
-                "📑 Datos Brutos",
+                "🤖 Trading Bot / Alpaca",
+                "📑 Datos Crudos",
             ]
         )
 
         with t1:
+            st.plotly_chart(create_candlestick_chart(data, ticker), width="stretch")
             st.plotly_chart(
-                create_candlestick_chart(data, ticker), use_container_width=True
+                create_moving_average_chart(data, ticker, ma_window), width="stretch"
             )
-            st.plotly_chart(
-                create_moving_average_chart(data, ticker, ma_window),
-                use_container_width=True,
-            )
-            st.plotly_chart(create_rsi_chart(data), use_container_width=True)
+            st.plotly_chart(create_rsi_chart(data), width="stretch")
 
         with t2:
-            col_left, col_right = st.columns(2)
-            with col_left:
-                st.plotly_chart(
-                    create_daily_returns_histogram(data), use_container_width=True
-                )
-            with col_right:
-                st.plotly_chart(
-                    create_volume_vs_close_scatter(data), use_container_width=True
-                )
-            st.plotly_chart(create_high_low_chart(data), use_container_width=True)
+            st.subheader("Análisis de Psicología de Velas")
+            st.plotly_chart(create_patterns_only_chart(data, ticker), width="stretch")
 
         with t3:
-            st.subheader("Simulación de Estrategia Minimalista")
-            st.info("Estrategia: COMPRA si Precio > SMA, VENDE si Precio < SMA.")
-
-            # Botón para ejecutar el pipeline
-            if st.button("🚀 Ejecutar Backtest"):
-                ledger, final_pos, final_cash = run_simulation(data)
-
-                # Resumen de resultados
-                c1, c2 = st.columns(2)
-                c1.success(f"**Posición Final:** {final_pos} unidades")
-                c2.warning(f"**Balance de Caja Final:** ${final_cash:,.2f}")
-
-                if ledger:
-                    st.markdown("### Ledger (Últimos 10 trades)")
-                    # Convertimos la lista de dataclasses en un DataFrame para mostrarlo mejor
-                    ledger_df = pd.DataFrame([vars(t) for t in ledger])
-                    st.dataframe(ledger_df.tail(10), use_container_width=True)
-                else:
-                    st.write("No se realizaron operaciones en este periodo.")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.plotly_chart(create_daily_returns_histogram(data), width="stretch")
+            with col_b:
+                st.plotly_chart(create_high_low_chart(data), width="stretch")
+            st.plotly_chart(create_volume_vs_close_scatter(data), width="stretch")
 
         with t4:
-            st.dataframe(
-                data.sort_values(by="Date", ascending=False), use_container_width=True
-            )
+            st.subheader("Simulación y Ejecución")
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.info("### 🧪 Backtest Histórico")
+                if st.button("🚀 Iniciar Simulación"):
+                    ledger, pos, cash = run_simulation(data, sl_input)
+                    st.success(f"Balance Final Simulado: ${cash:,.2f}")
+                    if ledger:
+                        st.dataframe(
+                            pd.DataFrame([vars(t) for t in ledger]), width="stretch"
+                        )
+                    else:
+                        st.write("No se generaron trades en el periodo analizado.")
+
+            with c2:
+                st.warning("### ⚡ Operativa Real (Alpaca)")
+                if not ALPACA_AVAILABLE:
+                    st.error(
+                        "Librería 'alpaca-py' no detectada. Instálala para operar."
+                    )
+                else:
+                    # Mecanismo de seguridad con confirmación
+                    confirmar_envio = st.checkbox(
+                        "Habilitar envío de órdenes a mercado"
+                    )
+
+                    if st.button(
+                        "Enviar Señal Actual a Alpaca", disabled=not confirmar_envio
+                    ):
+                        if api_key and secret_key:
+                            try:
+                                executor = AlpacaExecutor(
+                                    api_key, secret_key, paper_mode
+                                )
+                                engine = TradingEngine(stop_loss_pct=sl_input)
+                                last_row = data.iloc[-1]
+
+                                # Evaluar estrategia con el último dato disponible
+                                signal = engine.strategy(
+                                    last_row["Close"],
+                                    last_row["MA"],
+                                    last_row["Pattern_Detected"],
+                                )
+
+                                if signal == "BUY":
+                                    res = executor.place_order(ticker, 1, "BUY")
+                                    st.success(
+                                        f"ORDEN ENVIADA: Compra de 1 {ticker}. ID: {res.id}"
+                                    )
+                                elif signal == "SELL":
+                                    res = executor.place_order(ticker, 1, "SELL")
+                                    st.error(
+                                        f"ORDEN ENVIADA: Venta de 1 {ticker}. ID: {res.id}"
+                                    )
+                                else:
+                                    st.info(
+                                        "No hay señal de entrada activa en este momento."
+                                    )
+                            except Exception as e:
+                                st.error(f"Error de conexión o API: {e}")
+                        else:
+                            st.error(
+                                "Por favor, ingresa tus credenciales en el panel lateral."
+                            )
+
+                    if not confirmar_envio:
+                        st.caption(
+                            "ℹ️ Activa la casilla de arriba para habilitar el botón de envío."
+                        )
+
+        with t5:
+            st.dataframe(data.tail(100), width="stretch")
+    else:
+        st.error(f"Error: No se encontraron datos para {ticker}. Revisa el símbolo.")

@@ -1,33 +1,35 @@
 import pandas as pd
 import numpy as np
+import pandas_ta as ta
 
 
 def process_data(data: pd.DataFrame, ma_window: int = 50) -> pd.DataFrame:
-    """
-    Calcula métricas financieras avanzadas y limpia nulos.
-    """
     if data.empty:
         return data
 
     df = data.copy()
-
-    # 1. Retornos Diarios
+    # Indicadores básicos
     df["Daily Return"] = df["Close"].pct_change()
-
-    # 2. Media Móvil (MA)
     df["MA"] = df["Close"].rolling(window=ma_window).mean()
-
-    # 3. Volatilidad Anualizada (Gestión de Riesgo)
     df["Volatility"] = df["Daily Return"].rolling(window=20).std() * np.sqrt(252)
 
-    # 4. RSI (Relative Strength Index) - Momentum
-    delta = df["Close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df["RSI"] = 100 - (100 / (1 + rs))
+    # RSI (Genera columna RSI_14)
+    df.ta.rsi(length=14, append=True)
 
-    # Limpieza de nulos iniciales para evitar errores en gráficas
-    df = df.dropna()
+    # Detección de Patrones de Velas
+    cdl_patterns = df.ta.cdl_pattern(name="all")
+    df = pd.concat([df, cdl_patterns], axis=1)
 
-    return df
+    # Lógica de señales para el Bot y Visualización
+    df["Pattern_Detected"] = 0
+    # Buscamos columnas de patrones alcistas comunes
+    alcistas = [
+        c
+        for c in df.columns
+        if any(p in c for p in ["HAMMER", "MORNINGSTAR", "ENGULFING"])
+    ]
+    for col in alcistas:
+        # Si el valor > 0, marcamos patrón detectado
+        df["Pattern_Detected"] = np.where(df[col] > 0, 1, df["Pattern_Detected"])
+
+    return df.dropna()
