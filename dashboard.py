@@ -7,15 +7,14 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetPortfolioHistoryRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-# Importaciones de tu estructura
+# Importaciones desde tu estructura /src
 from src.data_fetcher import fetch_stock_data
-from src.data_processing import process_data
+from src.data_processing import process_data, calculate_support_resistance
 from src.pattern_recognition import find_complex_patterns
 from src.visualizations import *
-
-# NUEVA IMPORTACIÓN: Tu módulo de seguridad institucional
 from src.risk_management import drawdown_gate, exposure_gate, reconciliation_gate
 
+# 1. Configuración Inicial
 load_dotenv()
 st.set_page_config(page_title="Market Architect Pro", layout="wide")
 
@@ -40,6 +39,7 @@ if key and secret:
         tc = TradingClient(key, secret, paper=True)
         req_hist = GetPortfolioHistoryRequest(period="1M", timeframe="1D")
         hist = tc.get_portfolio_history(req_hist)
+
         c1, c2, c3 = st.columns(3)
         c1.metric("Equity Cuenta", f"${hist.equity[-1]:,.2f}")
         c2.metric("P/L Diario %", f"{hist.profit_loss_pct[-1]:.2%}")
@@ -49,8 +49,11 @@ if key and secret:
 
 st.markdown("---")
 
-# --- RESUMEN DE WATCHLIST ---
+# =================================================================
+# 📋 RESUMEN DE WATCHLIST (RESTAURADO EXACTAMENTE COMO ESTABA)
+# =================================================================
 st.markdown("### 📋 Resumen de Acciones Analizadas")
+
 processed_watchlist = {}
 for t in mis_tickers:
     raw_df = fetch_stock_data(t)
@@ -59,6 +62,7 @@ for t in mis_tickers:
         processed_watchlist[t] = df_proc
 
 if processed_watchlist:
+    # 1. Métricas visuales en la parte superior (Restaurado)
     cols = st.columns(len(mis_tickers))
     for i, t_name in enumerate(mis_tickers):
         if t_name in processed_watchlist:
@@ -69,18 +73,23 @@ if processed_watchlist:
                 change = ((price - prev_price) / prev_price) * 100
                 cols[i].metric(t_name, f"${price:.2f}", f"{change:+.2f}%")
 
+    # 2. Tabla resumen detallada
     summary_df = create_watchlist_summary_table(processed_watchlist)
     st.dataframe(summary_df, width="stretch", hide_index=True)
 
 st.markdown("---")
 
+# =================================================================
 # --- ANÁLISIS DETALLADO DEL TICKER ---
+# =================================================================
 st.title(f"Análisis Técnico: {ticker}")
 raw_data = fetch_stock_data(ticker)
 
 if raw_data is not None and not raw_data.empty:
     data = process_data(raw_data.reset_index(), ma_window)
 
+    # Soportes y Resistencias
+    data = calculate_support_resistance(data)
     precio_actual = data["Close"].iloc[-1]
     soporte_actual = data["Low"].iloc[-50:].min()
     distancia_sop = ((precio_actual - soporte_actual) / soporte_actual) * 100
@@ -90,9 +99,11 @@ if raw_data is not None and not raw_data.empty:
     if distancia_sop < 1.5:
         st.sidebar.success("🎯 Zona de Compra: Precio en Soporte")
 
+    # Detección de patrones
     data, signals = find_complex_patterns(data)
     final_rsi = manual_rsi if override_rsi else data["RSI"].iloc[-1]
 
+    # --- PESTAÑAS ---
     t1, t2, t3, t4, t5 = st.tabs(
         [
             "📊 Análisis Técnico",
@@ -108,51 +119,58 @@ if raw_data is not None and not raw_data.empty:
         st.plotly_chart(create_rsi_chart(data), width="stretch")
 
     with t2:
-        if signals.get("IHS", False):
-            st.success("🚀 Patrón IHS Detectado: ¡Oportunidad Alcista!")
-        st.plotly_chart(create_patterns_only_chart(data, ticker), width="stretch")
+        st.subheader("Control de Visualización de Patrones")
+
+        # INTERRUPTOR SOLICITADO
+        ver_patrones = st.toggle(
+            "🔍 Mostrar símbolos de patrones en gráficos", value=True
+        )
+
+        # Mensajes de los patrones detectados
+        for k, v in signals.items():
+            if v:
+                if k == "IHS":
+                    st.success("🚀 Patrón IHS Detectado: ¡Oportunidad Alcista!")
+                else:
+                    st.info(f"📍 {k}: {v}")
+
+        # Gráfico con control de visibilidad
+        st.plotly_chart(
+            create_patterns_only_chart(data, ticker, show_patterns=ver_patrones),
+            width="stretch",
+        )
 
     with t3:
         st.plotly_chart(create_volume_analysis_chart(data), width="stretch")
         st.plotly_chart(create_daily_returns_histogram(data), width="stretch")
 
-    # =================================================================
-    # 🔥 PESTAÑA 4: INTEGRACIÓN DE COMPUERTAS DE SEGURIDAD (PIPELINE)
-    # =================================================================
     with t4:
-        st.subheader("⚡ Ejecución Protegida por Risk Pipeline")
+        st.subheader("🛡️ Risk Management Pipeline")
         if tc:
             account = tc.get_account()
-
-            # 1. Pasar por el Drawdown Gate (Freno de emergencia del -2%)
             is_safe, daily_pl = drawdown_gate(account, max_drawdown_pct=-0.02)
 
             if not is_safe:
                 st.error(
-                    f"🛑 DRAWDOWN GATE ACTIVADO: Tu pérdida diaria es del {daily_pl:.2%}. El sistema ha bloqueado nuevas operaciones para proteger tu capital."
+                    f"🛑 DRAWDOWN GATE ACTIVADO: Tu pérdida diaria es del {daily_pl:.2%}. Bloqueado por seguridad."
                 )
             else:
                 st.success(f"✅ Drawdown Gate OK (P/L Diario: {daily_pl:.2%})")
-
-                # 2. Pasar por Exposure y Reconciliation Gates
                 max_allowed_qty = exposure_gate(
                     account, precio_actual, max_portfolio_pct=0.10
                 )
                 current_position = reconciliation_gate(tc, ticker)
 
-                # Paneles de información del bot
                 st.info(
-                    f"🛡️ Exposure Gate: Por riesgo, máximo puedes operar **{max_allowed_qty}** acciones de {ticker}."
+                    f"🛡️ Exposure Gate: Por riesgo, máximo puedes operar **{max_allowed_qty}** acciones."
                 )
                 if current_position > 0:
                     st.warning(
-                        f"🔄 Reconciliation Gate: Alpaca reporta que ya posees **{current_position}** acciones de {ticker}."
+                        f"🔄 Reconciliation Gate: Ya posees **{current_position}** acciones de {ticker}."
                     )
 
-                # Configuración de la orden respetando los límites
                 col_q, col_s = st.columns(2)
                 with col_q:
-                    # El selector de cantidad ya no te deja poner un millón de acciones, está limitado por el Gate
                     qty = st.number_input(
                         "Cantidad",
                         min_value=1,
@@ -162,13 +180,6 @@ if raw_data is not None and not raw_data.empty:
                 with col_s:
                     side = st.selectbox("Lado", ["BUY", "SELL"])
 
-                # Validación lógica para evitar ventas en corto accidentales
-                if side == "SELL" and current_position < qty:
-                    st.error(
-                        "⚠️ Operación de Venta en Corto (No tienes suficientes acciones para vender)."
-                    )
-
-                # Botón de ejecución
                 if st.button(f"🚀 Ejecutar {side} en Alpaca", width="stretch"):
                     try:
                         order = tc.submit_order(
