@@ -5,49 +5,42 @@ import numpy as np
 
 def find_complex_patterns(df):
     """
-    Detecta patrones usando pandas_ta (Cloud Friendly) y lógica personalizada.
-    Mantiene la compatibilidad con el Dashboard de Market Architect Pro.
+    Detecta patrones usando pandas_ta y lógica de picos/valles.
     """
     if "Pattern_Detected" not in df.columns:
         df["Pattern_Detected"] = ""
 
     signals = {}
 
-    # 1. Patrones de Velas con pandas_ta
-    # Generamos un DataFrame temporal con los patrones seleccionados
+    # 1. Detección de patrones de velas vía pandas_ta
     try:
+        # Buscamos patrones comunes: doji, hammer, engulfing, shootingstar
         patterns_df = df.ta.cdl_pattern(
             name=["doji", "hammer", "engulfing", "shootingstar"]
         )
 
         if patterns_df is not None:
-            # Mapeamos los resultados al formato de tu Dashboard
             for col in patterns_df.columns:
-                # Limpiamos el nombre: 'CDL_DOJI' -> 'DOJI'
                 name = col.replace("CDL_", "").upper()
-
-                # pandas_ta devuelve 100 para alcista y -100 para bajista
-                # Buscamos donde el valor no sea 0
+                # 100 o -100 indica presencia del patrón
                 hits = patterns_df[patterns_df[col] != 0]
                 for idx in hits.index:
                     current = df.at[idx, "Pattern_Detected"]
-                    # Si ya hay un patrón, lo concatenamos con '+'
                     df.at[idx, "Pattern_Detected"] = (
                         name if current == "" else f"{current}+{name}"
                     )
-                    signals[name] = f"Patrón {name} Detectado vía Pandas_TA"
+                    signals[name] = f"Señal {name} identificada"
     except Exception as e:
-        print(f"Aviso: Error en detección de velas: {e}")
+        print(f"Error en motor de patrones: {e}")
 
-    # 2. Lógica Manual para Inverted Head and Shoulders (IHS)
-    # Mantenemos tu arquitectura de picos y valles original
+    # 2. Lógica de Inverted Head and Shoulders (IHS) - Tu lógica original
     prices = df["Close"].values
     for i in range(5, len(prices)):
         window = prices[i - 5 : i]
         if len(window) < 5:
             continue
         a, b, c, d, e = window
-        # Lógica de estructura: hombro-cabeza-hombro invertido
+        # Estructura de reversión geométrica
         if (
             a < b
             and c < a
@@ -57,6 +50,6 @@ def find_complex_patterns(df):
             and abs(b - d) <= np.mean([b, d]) * 0.02
         ):
             df.at[df.index[i], "Pattern_Detected"] = "IHS"
-            signals["IHS"] = "Inverted Head and Shoulders (Estructura de Reversión)"
+            signals["IHS"] = "Inverted Head and Shoulders Detectado"
 
     return df, signals
