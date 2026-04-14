@@ -3,18 +3,19 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 
-# Importaciones de Alpaca (Sintaxis 2026)
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetPortfolioHistoryRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-# Importaciones desde tu estructura /src en GitHub
+# Importaciones de tu estructura
 from src.data_fetcher import fetch_stock_data
 from src.data_processing import process_data
 from src.pattern_recognition import find_complex_patterns
 from src.visualizations import *
 
-# 1. Configuración Inicial
+# NUEVA IMPORTACIÓN: Tu módulo de seguridad institucional
+from src.risk_management import drawdown_gate, exposure_gate, reconciliation_gate
+
 load_dotenv()
 st.set_page_config(page_title="Market Architect Pro", layout="wide")
 
@@ -39,7 +40,6 @@ if key and secret:
         tc = TradingClient(key, secret, paper=True)
         req_hist = GetPortfolioHistoryRequest(period="1M", timeframe="1D")
         hist = tc.get_portfolio_history(req_hist)
-
         c1, c2, c3 = st.columns(3)
         c1.metric("Equity Cuenta", f"${hist.equity[-1]:,.2f}")
         c2.metric("P/L Diario %", f"{hist.profit_loss_pct[-1]:.2%}")
@@ -49,20 +49,16 @@ if key and secret:
 
 st.markdown("---")
 
-# --- RESUMEN DE WATCHLIST (Vista Panorámica) ---
+# --- RESUMEN DE WATCHLIST ---
 st.markdown("### 📋 Resumen de Acciones Analizadas")
-
-# Solución al ValueError: Procesamos cada ticker individualmente
 processed_watchlist = {}
 for t in mis_tickers:
     raw_df = fetch_stock_data(t)
     if raw_df is not None and not raw_df.empty:
-        # Procesamos datos para obtener indicadores
         df_proc = process_data(raw_df.reset_index(), ma_window)
         processed_watchlist[t] = df_proc
 
 if processed_watchlist:
-    # Generamos métricas rápidas en columnas
     cols = st.columns(len(mis_tickers))
     for i, t_name in enumerate(mis_tickers):
         if t_name in processed_watchlist:
@@ -73,7 +69,6 @@ if processed_watchlist:
                 change = ((price - prev_price) / prev_price) * 100
                 cols[i].metric(t_name, f"${price:.2f}", f"{change:+.2f}%")
 
-    # Tabla resumen detallada
     summary_df = create_watchlist_summary_table(processed_watchlist)
     st.dataframe(summary_df, width="stretch", hide_index=True)
 
@@ -86,7 +81,6 @@ raw_data = fetch_stock_data(ticker)
 if raw_data is not None and not raw_data.empty:
     data = process_data(raw_data.reset_index(), ma_window)
 
-    # Métrica de Proximidad al Soporte (Lógica Support&Resistance.ipynb)
     precio_actual = data["Close"].iloc[-1]
     soporte_actual = data["Low"].iloc[-50:].min()
     distancia_sop = ((precio_actual - soporte_actual) / soporte_actual) * 100
@@ -96,11 +90,9 @@ if raw_data is not None and not raw_data.empty:
     if distancia_sop < 1.5:
         st.sidebar.success("🎯 Zona de Compra: Precio en Soporte")
 
-    # Detección de patrones
     data, signals = find_complex_patterns(data)
     final_rsi = manual_rsi if override_rsi else data["RSI"].iloc[-1]
 
-    # --- PESTAÑAS ---
     t1, t2, t3, t4, t5 = st.tabs(
         [
             "📊 Análisis Técnico",
@@ -124,29 +116,73 @@ if raw_data is not None and not raw_data.empty:
         st.plotly_chart(create_volume_analysis_chart(data), width="stretch")
         st.plotly_chart(create_daily_returns_histogram(data), width="stretch")
 
+    # =================================================================
+    # 🔥 PESTAÑA 4: INTEGRACIÓN DE COMPUERTAS DE SEGURIDAD (PIPELINE)
+    # =================================================================
     with t4:
-        st.subheader("⚡ Ejecución Paper Trading")
+        st.subheader("⚡ Ejecución Protegida por Risk Pipeline")
         if tc:
-            col_q, col_s = st.columns(2)
-            with col_q:
-                qty = st.number_input("Cantidad", min_value=1, value=1)
-            with col_s:
-                side = st.selectbox("Lado", ["BUY", "SELL"])
+            account = tc.get_account()
 
-            if st.button(f"🚀 Ejecutar {side} en Alpaca", width="stretch"):
-                try:
-                    order = tc.submit_order(
-                        MarketOrderRequest(
-                            symbol=ticker,
-                            qty=qty,
-                            side=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
-                            time_in_force=TimeInForce.GTC,
-                        )
+            # 1. Pasar por el Drawdown Gate (Freno de emergencia del -2%)
+            is_safe, daily_pl = drawdown_gate(account, max_drawdown_pct=-0.02)
+
+            if not is_safe:
+                st.error(
+                    f"🛑 DRAWDOWN GATE ACTIVADO: Tu pérdida diaria es del {daily_pl:.2%}. El sistema ha bloqueado nuevas operaciones para proteger tu capital."
+                )
+            else:
+                st.success(f"✅ Drawdown Gate OK (P/L Diario: {daily_pl:.2%})")
+
+                # 2. Pasar por Exposure y Reconciliation Gates
+                max_allowed_qty = exposure_gate(
+                    account, precio_actual, max_portfolio_pct=0.10
+                )
+                current_position = reconciliation_gate(tc, ticker)
+
+                # Paneles de información del bot
+                st.info(
+                    f"🛡️ Exposure Gate: Por riesgo, máximo puedes operar **{max_allowed_qty}** acciones de {ticker}."
+                )
+                if current_position > 0:
+                    st.warning(
+                        f"🔄 Reconciliation Gate: Alpaca reporta que ya posees **{current_position}** acciones de {ticker}."
                     )
-                    st.success(f"Orden {order.id} enviada.")
-                    st.json({"ID": order.id, "Estado": order.status})
-                except Exception as e:
-                    st.error(f"Error: {e}")
+
+                # Configuración de la orden respetando los límites
+                col_q, col_s = st.columns(2)
+                with col_q:
+                    # El selector de cantidad ya no te deja poner un millón de acciones, está limitado por el Gate
+                    qty = st.number_input(
+                        "Cantidad",
+                        min_value=1,
+                        max_value=max(1, max_allowed_qty),
+                        value=1,
+                    )
+                with col_s:
+                    side = st.selectbox("Lado", ["BUY", "SELL"])
+
+                # Validación lógica para evitar ventas en corto accidentales
+                if side == "SELL" and current_position < qty:
+                    st.error(
+                        "⚠️ Operación de Venta en Corto (No tienes suficientes acciones para vender)."
+                    )
+
+                # Botón de ejecución
+                if st.button(f"🚀 Ejecutar {side} en Alpaca", width="stretch"):
+                    try:
+                        order = tc.submit_order(
+                            MarketOrderRequest(
+                                symbol=ticker,
+                                qty=qty,
+                                side=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
+                                time_in_force=TimeInForce.GTC,
+                            )
+                        )
+                        st.success(f"Orden {order.id} enviada.")
+                        st.json({"ID": order.id, "Estado": order.status})
+                    except Exception as e:
+                        st.error(f"Error: {e}")
         else:
             st.error("Conexión Alpaca no disponible.")
 
