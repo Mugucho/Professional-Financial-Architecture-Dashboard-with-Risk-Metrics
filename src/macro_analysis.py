@@ -23,19 +23,33 @@ def get_historical_macro_events(ticker, start_date, end_date):
 
     try:
         response = requests.get(url)
-        articles = response.json().get("articles", [])
+        data = response.json()
+
+        # Blindaje extra: si la API nos bloquea por buscar fechas muy antiguas en el plan gratis
+        if data.get("status") != "ok":
+            return []
+
+        articles = data.get("articles", [])
         # Tomamos los 10 más relevantes para no saturar la gráfica
         events = []
         for art in articles[:10]:
+            # BLINDAJE: Si 'description' es None, ponemos un string vacío para que no colapse
+            raw_desc = art.get("description")
+            safe_desc = (
+                raw_desc
+                if raw_desc is not None
+                else "Sin descripción provista por la fuente."
+            )
+
             events.append(
                 {
-                    "Date": art["publishedAt"][:10],
-                    "Title": art["title"],
-                    "Description": art["description"],
+                    "Date": art.get("publishedAt", "")[:10],
+                    "Title": art.get("title", "Titular desconocido"),
+                    "Description": safe_desc,
                 }
             )
         return events
-    except:
+    except Exception as e:
         return []
 
 
@@ -61,14 +75,14 @@ def create_macro_chart(df, events, ticker):
     )
 
     # 2. Marcadores de Eventos (La Magia)
-    event_dates = [e["Date"] for e in events]
-    # Filtramos el precio en esas fechas para ubicar el marcador
-    event_prices = df[df["Date"].isin(event_dates)]
-
     for event in events:
         # Buscamos el precio de cierre en esa fecha para poner el punto
         price_at_date = df[df["Date"] == event["Date"]]["Close"]
         if not price_at_date.empty:
+
+            # Cortamos a 150 caracteres de forma segura ahora que sabemos que sí es un string
+            short_desc = event["Description"][:150]
+
             fig.add_trace(
                 go.Scatter(
                     x=[event["Date"]],
@@ -82,7 +96,7 @@ def create_macro_chart(df, events, ticker):
                     ),
                     text="📢",
                     textposition="top center",
-                    hovertext=f"<b>{event['Title']}</b><br>{event['Description'][:150]}...",
+                    hovertext=f"<b>{event['Title']}</b><br>{short_desc}...",
                     hoverinfo="text",
                     name="Evento Macro",
                 ),
