@@ -1,6 +1,11 @@
 streamlit
 pandas
-yfinance
-plotly
 numpy
-pandas_ta
+plotly
+python-dotenv
+alpaca-py
+requests
+textblob
+ta-lib
+python-docx
+fpdf
