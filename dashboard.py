@@ -13,6 +13,7 @@ from src.data_processing import process_data, calculate_support_resistance
 from src.pattern_recognition import find_complex_patterns
 from src.visualizations import *
 from src.risk_management import drawdown_gate, exposure_gate, reconciliation_gate
+from src.oracle import get_market_sentiment
 
 # 1. Configuración Inicial
 load_dotenv()
@@ -98,6 +99,18 @@ if raw_data is not None and not raw_data.empty:
     st.sidebar.metric("Proximidad Soporte", f"{distancia_sop:.2f}%")
     if distancia_sop < 1.5:
         st.sidebar.success("🎯 Zona de Compra: Precio en Soporte")
+
+    # --- ORÁCULO DE SENTIMIENTO ---
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔮 Oráculo de Noticias")
+    st.sidebar.caption("Analiza titulares en tiempo real con IA.")
+
+    # Usamos un botón para no gastar la API cada vez que cambias de pestaña
+    if st.sidebar.button("Consultar Sentimiento del Mercado", use_container_width=True):
+        with st.sidebar.spinner("El Oráculo está leyendo las noticias..."):
+            sentimiento, score = get_market_sentiment(ticker)
+            st.sidebar.info(f"**{sentimiento}**")
+            st.sidebar.caption(f"Score de Polaridad: {score:.3f} (-1 a 1)")
 
     # Detección de patrones
     data, signals = find_complex_patterns(data)
