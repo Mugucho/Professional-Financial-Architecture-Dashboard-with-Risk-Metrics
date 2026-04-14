@@ -1,135 +1,168 @@
 import plotly.graph_objects as go
-import plotly.express as px
+import pandas as pd
 
 
 def create_candlestick_chart(data, ticker):
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=data["Date"],
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name=ticker,
-            )
-        ]
+    """Genera el gráfico de velas con marcadores de patrones integrados."""
+    fig = go.Figure()
+
+    # Velas Japonesas
+    fig.add_trace(
+        go.Candlestick(
+            x=data["Date"],
+            open=data["Open"],
+            high=data["High"],
+            low=data["Low"],
+            close=data["Close"],
+            name="Precio",
+        )
     )
 
-    # Marcadores de patrones en el gráfico principal
-    hits = data[data["Pattern_Detected"] != 0]
-    if not hits.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=hits["Date"],
-                y=hits["High"] * 1.02,
-                mode="markers",
-                name="Patrón Detectado",
-                marker=dict(symbol="diamond", size=10, color="yellow"),
+    # DIBUJAR MARCADORES: Aquí es donde verás el "IHS"
+    if "Pattern_Detected" in data.columns:
+        hits = data[data["Pattern_Detected"] != 0]
+        if not hits.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=hits["Date"],
+                    y=hits["High"] * 1.01,
+                    mode="markers+text",
+                    text=hits["Pattern_Detected"],
+                    textposition="top center",
+                    marker=dict(
+                        symbol="triangle-down",
+                        size=12,
+                        color="#00FFA3",
+                        line=dict(width=1, color="white"),
+                    ),
+                    name="Patrón Detectado",
+                )
             )
-        )
+
     fig.update_layout(
-        xaxis_rangeslider_visible=False,
+        title=f"Arquitectura Técnica: {ticker}",
         template="plotly_dark",
-        title=f"Velas: {ticker}",
+        xaxis_rangeslider_visible=False,
+        height=600,
     )
     return fig
 
 
 def create_patterns_only_chart(data, ticker):
-    """Pestaña dedicada exclusivamente a patrones de velas."""
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=data["Date"],
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name=ticker,
-            )
-        ]
+    """Gráfico de la pestaña 2: Psicología con estrellas doradas."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=data["Date"],
+            y=data["Close"],
+            name="Cierre",
+            line=dict(color="rgba(156, 163, 175, 0.7)", width=2),
+        )
     )
 
-    # Resaltar con etiquetas de texto
-    patterns = [
-        c
-        for c in data.columns
-        if any(p in c for p in ["HAMMER", "MORNINGSTAR", "ENGULFING"])
-    ]
-    for p in patterns:
-        hits = data[data[p] > 0]
+    if "Pattern_Detected" in data.columns:
+        hits = data[data["Pattern_Detected"] != 0]
         if not hits.empty:
             fig.add_trace(
                 go.Scatter(
                     x=hits["Date"],
-                    y=hits["Low"] * 0.98,
+                    y=hits["Low"] * 0.99,
                     mode="markers+text",
-                    name=p,
-                    text=[p.split("_")[-1]] * len(hits),
+                    text=hits["Pattern_Detected"],
                     textposition="bottom center",
-                    marker=dict(symbol="triangle-up", size=12, color="cyan"),
+                    marker=dict(
+                        symbol="star",
+                        size=15,
+                        color="gold",
+                        line=dict(width=1, color="white"),
+                    ),
+                    name="Punto de Inversión",
                 )
             )
     fig.update_layout(
-        xaxis_rangeslider_visible=True,
-        template="plotly_dark",
-        title="Detector de Velas",
+        title=f"Psicología de Patrones: {ticker}", template="plotly_dark", height=500
     )
     return fig
 
 
 def create_rsi_chart(data):
-    rsi_col = [c for c in data.columns if "RSI" in c][0]
-    fig = go.Figure(
+    fig = go.Figure()
+    fig.add_trace(
         go.Scatter(
-            x=data["Date"], y=data[rsi_col], name="RSI", line=dict(color="violet")
+            x=data["Date"],
+            y=data["RSI"],
+            name="RSI",
+            line=dict(color="#C084FC", width=2),
         )
     )
-    fig.add_hline(y=70, line_dash="dot", line_color="red")
-    fig.add_hline(y=30, line_dash="dot", line_color="green")
+    fig.add_hline(y=70, line_dash="dash", line_color="red")
+    fig.add_hline(y=30, line_dash="dash", line_color="green")
     fig.update_layout(
-        template="plotly_dark", title="Momentum RSI", yaxis=dict(range=[0, 100])
+        title="RSI (Fuerza Relativa)",
+        template="plotly_dark",
+        yaxis=dict(range=[0, 100]),
+        height=300,
     )
     return fig
 
 
-def create_moving_average_chart(data, ticker, ma_window):
+def create_volume_analysis_chart(data):
+    """
+    Analiza la fuerza del mercado comparando el volumen actual
+    con su media móvil de 20 días (Lógica de Untitled44).
+    """
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=data["Date"], y=data["Close"], name="Precio"))
+
+    # 1. Barras de Volumen
+    fig.add_trace(
+        go.Bar(
+            x=data["Date"],
+            y=data["Volume"],
+            name="Volumen Diario",
+            marker_color="#3B82F6",  # Azul profesional
+            opacity=0.7,
+        )
+    )
+
+    # 2. Línea de Promedio de Volumen (Media 20)
     fig.add_trace(
         go.Scatter(
             x=data["Date"],
-            y=data["MA"],
-            name=f"SMA {ma_window}",
-            line=dict(dash="dash"),
+            y=data["Vol_Avg"],
+            name="Media 20d",
+            line=dict(color="orange", width=2),
         )
     )
-    fig.update_layout(template="plotly_dark", title="Tendencia SMA")
+
+    fig.update_layout(
+        title="Análisis de Fuerza: Volumen Relativo",
+        template="plotly_dark",
+        xaxis_title="Fecha",
+        yaxis_title="Volumen",
+        height=350,
+        margin=dict(l=20, r=20, t=50, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+
     return fig
 
 
 def create_daily_returns_histogram(data):
-    return px.histogram(
-        data, x="Daily Return", nbins=50, template="plotly_dark", title="Riesgo"
-    )
-
-
-def create_volume_vs_close_scatter(data):
-    return px.scatter(
-        data, x="Volume", y="Close", color="Daily Return", template="plotly_dark"
-    )
-
-
-def create_high_low_chart(data):
+    """
+    Muestra la distribución de retornos para análisis de riesgo (Lógica de Untitled42).
+    """
     fig = go.Figure()
     fig.add_trace(
-        go.Scatter(
-            x=data["Date"], y=data["High"], name="High", line=dict(color="green")
+        go.Histogram(
+            x=data["Daily Return"], nbinsx=50, marker_color="#EF4444", name="Frecuencia"
         )
     )
-    fig.add_trace(
-        go.Scatter(x=data["Date"], y=data["Low"], name="Low", line=dict(color="red"))
+
+    fig.update_layout(
+        title="Distribución de Retornos (Riesgo)",
+        template="plotly_dark",
+        height=350,
+        xaxis_title="Retorno Diario",
+        yaxis_title="Frecuencia",
     )
-    fig.update_layout(template="plotly_dark")
     return fig

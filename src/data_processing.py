@@ -3,33 +3,22 @@ import numpy as np
 import pandas_ta as ta
 
 
-def process_data(data: pd.DataFrame, ma_window: int = 50) -> pd.DataFrame:
-    if data.empty:
-        return data
+def process_data(df, ma_window):
+    df = df.copy()
 
-    df = data.copy()
-    # Indicadores básicos
-    df["Daily Return"] = df["Close"].pct_change()
+    # 1. Indicadores Base
     df["MA"] = df["Close"].rolling(window=ma_window).mean()
-    df["Volatility"] = df["Daily Return"].rolling(window=20).std() * np.sqrt(252)
+    df["RSI"] = ta.rsi(df["Close"], length=14)
+    df["Daily Return"] = df["Close"].pct_change()
 
-    # RSI (Genera columna RSI_14)
-    df.ta.rsi(length=14, append=True)
+    # 2. Análisis de Fuerza de Volumen (Untitled44.ipynb)
+    df["Vol_Avg"] = df["Volume"].rolling(window=20).mean()
+    df["Rel_Vol"] = df["Volume"] / df["Vol_Avg"]
 
-    # Detección de Patrones de Velas
-    cdl_patterns = df.ta.cdl_pattern(name="all")
-    df = pd.concat([df, cdl_patterns], axis=1)
+    # 3. Métricas de Riesgo (Untitled42.ipynb)
+    df["Volatility"] = df["Daily Return"].rolling(window=21).std() * np.sqrt(252)
 
-    # Lógica de señales para el Bot y Visualización
+    # 4. Seguro contra KeyError: Creamos la columna para las visualizaciones
     df["Pattern_Detected"] = 0
-    # Buscamos columnas de patrones alcistas comunes
-    alcistas = [
-        c
-        for c in df.columns
-        if any(p in c for p in ["HAMMER", "MORNINGSTAR", "ENGULFING"])
-    ]
-    for col in alcistas:
-        # Si el valor > 0, marcamos patrón detectado
-        df["Pattern_Detected"] = np.where(df[col] > 0, 1, df["Pattern_Detected"])
 
     return df.dropna()
