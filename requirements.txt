@@ -6,6 +6,7 @@ python-dotenv
 alpaca-py
 requests
 textblob
-ta-lib
-python-docx
+yfinance
+pandas_ta
 fpdf
+python-docx
