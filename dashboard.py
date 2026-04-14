@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
-# Importaciones de Alpaca (Sintaxis 2026)
+# Importaciones de Alpaca (Trading Institucional)
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetPortfolioHistoryRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-# Importaciones desde tu estructura modular /src
+# Importaciones de la arquitectura modular /src
 from src.data_fetcher import fetch_stock_data
 from src.data_processing import process_data, calculate_support_resistance
 from src.pattern_recognition import find_complex_patterns
@@ -16,8 +17,9 @@ from src.visualizations import *
 from src.risk_management import drawdown_gate, exposure_gate, reconciliation_gate
 from src.oracle import get_market_sentiment
 from src.backtest import run_backtest, create_equity_curve_chart
+from src.macro_analysis import get_historical_macro_events, create_macro_chart
 
-# 1. Configuración de página y entorno
+# 1. Configuración del entorno y UI
 load_dotenv()
 st.set_page_config(page_title="Market Architect Pro", layout="wide")
 
@@ -32,7 +34,7 @@ ma_window = st.sidebar.slider("Ventana SMA", 5, 200, 50)
 override_rsi = st.sidebar.checkbox("Ajuste Manual RSI")
 manual_rsi = st.sidebar.slider("Valor RSI", 0, 100, 50, disabled=not override_rsi)
 
-# --- CONEXIÓN ALPACA (Métricas de Cuenta) ---
+# --- CONEXIÓN ALPACA (Estado de Cuenta) ---
 key = os.getenv("ALPACA_API_KEY")
 secret = os.getenv("ALPACA_SECRET_KEY")
 tc = None
@@ -65,7 +67,7 @@ for t in mis_tickers:
         processed_watchlist[t] = df_proc
 
 if processed_watchlist:
-    # 1. Fila de métricas visuales (Restaurada)
+    # Fila de métricas visuales para los 6 tickers principales
     cols = st.columns(len(mis_tickers))
     for i, t_name in enumerate(mis_tickers):
         if t_name in processed_watchlist:
@@ -76,25 +78,25 @@ if processed_watchlist:
                 change = ((price - prev_price) / prev_price) * 100
                 cols[i].metric(t_name, f"${price:.2f}", f"{change:+.2f}%")
 
-    # 2. Tabla detallada
+    # Tabla resumen detallada (visualizations.py)
     summary_df = create_watchlist_summary_table(processed_watchlist)
     st.dataframe(summary_df, width="stretch", hide_index=True)
 
 st.markdown("---")
 
 # =================================================================
-# --- ANÁLISIS DETALLADO DEL TICKER ---
+# --- ANÁLISIS DETALLADO DEL TICKER SELECCIONADO ---
 # =================================================================
-st.title(f"Análisis Técnico: {ticker}")
+st.title(f"Market Architect Pro: {ticker}")
 raw_data = fetch_stock_data(ticker)
 
 if raw_data is not None and not raw_data.empty:
     data = process_data(raw_data.reset_index(), ma_window)
     data = calculate_support_resistance(data)
 
-    # Métrica de Soporte en Sidebar
+    # --- MÉTRICAS SIDEBAR ---
     precio_actual = data["Close"].iloc[-1]
-    soporte_actual = data["Low"].iloc[-50:].min()
+    soporte_actual = data["Support_Level"].iloc[-1]
     distancia_sop = ((precio_actual - soporte_actual) / soporte_actual) * 100
 
     st.sidebar.markdown("---")
@@ -105,25 +107,25 @@ if raw_data is not None and not raw_data.empty:
     # --- ORÁCULO DE SENTIMIENTO (Sidebar) ---
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔮 Oráculo de Noticias")
-    if st.sidebar.button("Consultar Sentimiento del Mercado", use_container_width=True):
-        with st.sidebar.spinner("Leyendo noticias..."):
+    if st.sidebar.button("Consultar Sentimiento Actual", use_container_width=True):
+        with st.sidebar.spinner("Analizando titulares..."):
             sentimiento, score = get_market_sentiment(ticker)
             st.sidebar.info(f"**{sentimiento}**")
             st.sidebar.caption(f"Score de Polaridad: {score:.3f}")
 
-    # Procesamiento de patrones y señales
+    # Reconocimiento de patrones
     data, signals = find_complex_patterns(data)
-    final_rsi = manual_rsi if override_rsi else data["RSI"].iloc[-1]
 
-    # --- CONFIGURACIÓN DE PESTAÑAS (Las 6 definitivas) ---
-    t1, t2, t3, t4, t5, t6 = st.tabs(
+    # --- NAVEGACIÓN POR PESTAÑAS (7 Mundos) ---
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(
         [
             "📊 Análisis Técnico",
-            "🕯️ Patrones Candlestick",
-            "⚠️ Riesgo y Volumen",
-            "🤖 Trading Bot / Alpaca",
+            "🕯️ Patrones",
+            "⚠️ Riesgo/Volumen",
+            "🤖 Trading Bot",
             "📑 Datos",
             "📈 Backtesting",
+            "🌍 Macro Impact",
         ]
     )
 
@@ -132,16 +134,15 @@ if raw_data is not None and not raw_data.empty:
         st.plotly_chart(create_rsi_chart(data), width="stretch")
 
     with t2:
-        st.subheader("Control de Visualización de Patrones")
-        # Interruptor de limpieza visual
+        st.subheader("Psicología de Velas Japonesas")
         ver_patrones = st.toggle(
-            "🔍 Mostrar símbolos de patrones en gráficos", value=True
+            "🔍 Visualizar símbolos de patrones en el gráfico", value=True
         )
 
         for k, v in signals.items():
             if v:
                 if k == "IHS":
-                    st.success("🚀 Patrón IHS Detectado: ¡Oportunidad Alcista!")
+                    st.success("🚀 Patrón IHS Confirmado: Estructura Alcista")
                 else:
                     st.info(f"📍 {k}: {v}")
 
@@ -158,27 +159,27 @@ if raw_data is not None and not raw_data.empty:
         st.subheader("🛡️ Risk Management Pipeline")
         if tc:
             account = tc.get_account()
-            # Gate 1: Drawdown
+            # Compuerta 1: Drawdown
             is_safe, daily_pl = drawdown_gate(account, max_drawdown_pct=-0.02)
 
             if not is_safe:
                 st.error(
-                    f"🛑 DRAWDOWN GATE ACTIVADO: Pérdida del {daily_pl:.2%}. Bloqueado."
+                    f"🛑 BLOQUEO DE SEGURIDAD: Pérdida diaria {daily_pl:.2%}. Operativa suspendida."
                 )
             else:
                 st.success(f"✅ Drawdown Gate OK (P/L Diario: {daily_pl:.2%})")
-                # Gate 2 & 3: Exposure & Reconciliation
+                # Compuertas 2 y 3: Exposición y Reconciliación
                 max_allowed_qty = exposure_gate(
                     account, precio_actual, max_portfolio_pct=0.10
                 )
                 current_position = reconciliation_gate(tc, ticker)
 
                 st.info(
-                    f"🛡️ Exposure Gate: Máximo permitido: **{max_allowed_qty}** acciones."
+                    f"🛡️ Exposure Gate: Límite sugerido de **{max_allowed_qty}** acciones."
                 )
                 if current_position > 0:
                     st.warning(
-                        f"🔄 Reconciliation Gate: Posición abierta de **{current_position}** acciones."
+                        f"🔄 Reconciliation Gate: Ya posees **{current_position}** acciones."
                     )
 
                 col_q, col_s = st.columns(2)
@@ -190,7 +191,7 @@ if raw_data is not None and not raw_data.empty:
                         value=1,
                     )
                 with col_s:
-                    side = st.selectbox("Operación", ["BUY", "SELL"])
+                    side = st.selectbox("Lado", ["BUY", "SELL"])
 
                 if st.button(f"🚀 Ejecutar {side} en Alpaca", width="stretch"):
                     try:
@@ -202,33 +203,63 @@ if raw_data is not None and not raw_data.empty:
                                 time_in_force=TimeInForce.GTC,
                             )
                         )
-                        st.success(f"✅ Orden {order.id} enviada con éxito.")
+                        st.success(f"Orden {order.id} enviada correctamente.")
                         st.json({"ID": order.id, "Estado": order.status})
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Error en ejecución: {e}")
         else:
-            st.error("Conexión Alpaca no disponible.")
+            st.error("Conexión con Alpaca no detectada.")
 
     with t5:
         st.dataframe(data.tail(100), width="stretch")
 
     with t6:
-        st.subheader("Laboratorio de Backtesting")
-        st.caption(
-            "Simulación: Compra en patrón detectado (Precio > SMA) con mantenimiento de 5 días."
-        )
-
-        # Motor de Backtest
+        st.subheader("📈 Simulación de Rendimiento Histórico")
         bt_data, bt_metrics = run_backtest(data, initial_capital=10000)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Retorno Estrategia", f"{bt_metrics['Retorno Estrategia']:.2%}")
-        m2.metric(
-            "Retorno Mercado (Hold)", f"{bt_metrics['Retorno Mercado (Hold)']:.2%}"
-        )
-        m3.metric("Max Drawdown", f"{bt_metrics['Peor Caída (Max Drawdown)']:.2%}")
+        m2.metric("Mercado (Hold)", f"{bt_metrics['Retorno Mercado (Hold)']:.2%}")
+        m3.metric("Máximo Drawdown", f"{bt_metrics['Peor Caída (Max Drawdown)']:.2%}")
 
         st.plotly_chart(create_equity_curve_chart(bt_data, ticker), width="stretch")
 
+    with t7:
+        st.subheader("🌍 Análisis de Impacto Geopolítico y Macro")
+        st.caption(
+            "Investiga cómo los eventos globales y decisiones económicas afectaron el precio en periodos específicos."
+        )
+
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            start_f = st.date_input("Fecha Inicio", value=data["Date"].iloc[0])
+        with c_f2:
+            end_f = st.date_input("Fecha Fin", value=data["Date"].iloc[-1])
+
+        if st.button("Sincronizar Datos Macro", use_container_width=True):
+            with st.spinner("Correlacionando eventos económicos..."):
+                # Filtrado temporal para el zoom interactivo
+                mask = (data["Date"] >= pd.to_datetime(start_f)) & (
+                    data["Date"] <= pd.to_datetime(end_f)
+                )
+                filtered_data = data.loc[mask]
+
+                # Obtención de eventos (macro_analysis.py)
+                macro_events = get_historical_macro_events(ticker, start_f, end_f)
+
+                if macro_events:
+                    st.plotly_chart(
+                        create_macro_chart(filtered_data, macro_events, ticker),
+                        width="stretch",
+                    )
+                    # Listado descriptivo de los hitos
+                    for e in macro_events:
+                        with st.expander(f"📅 {e['Date']} - {e['Title']}"):
+                            st.write(e["Description"])
+                else:
+                    st.warning(
+                        "No se hallaron hitos específicos en el rango seleccionado con la API actual."
+                    )
+
 else:
-    st.error(f"No se pudieron obtener datos para el ticker: {ticker}")
+    st.error(f"Error de conexión: No se pudieron recuperar datos para {ticker}.")
