@@ -54,11 +54,6 @@ if key and secret:
     except Exception as e:
         st.sidebar.warning(f"Error Alpaca: {e}")
 
-st.sidebar.markdown("---")
-st.sidebar.caption("🏛️ **Market Architect Pro v1.0**")
-st.sidebar.caption("Handcrafted by **Miguel Calle Romero**")
-st.sidebar.caption("Trenton, NJ | 2026")
-
 st.markdown("---")
 
 # =================================================================
@@ -119,6 +114,11 @@ if raw_data is not None and not raw_data.empty:
             sentimiento, score = get_market_sentiment(ticker)
             st.sidebar.info(f"**{sentimiento}**")
             st.sidebar.caption(f"Score de Polaridad: {score:.3f}")
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption("🏛️ **Market Architect Pro v1.0**")
+    st.sidebar.caption("Handcrafted by **Miguel Calle Romero**")
+    st.sidebar.caption("Trenton, NJ | 2026")
 
     # Reconocimiento de patrones
     data, signals = find_complex_patterns(data)
