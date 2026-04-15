@@ -18,10 +18,12 @@ from src.risk_management import drawdown_gate, exposure_gate, reconciliation_gat
 from src.oracle import get_market_sentiment
 from src.backtest import run_backtest, create_equity_curve_chart
 from src.macro_analysis import get_historical_macro_events, create_macro_chart
+from src.styles import apply_futuristic_design
 
 # 1. Configuración del entorno y UI
 load_dotenv()
 st.set_page_config(page_title="Market Architect Pro", layout="wide")
+apply_futuristic_design()
 
 # --- SIDEBAR: Sentinel Control ---
 st.sidebar.title("🏛️ Sentinel Control")
@@ -51,6 +53,11 @@ if key and secret:
         c3.metric("Status", "Conectado ✅")
     except Exception as e:
         st.sidebar.warning(f"Error Alpaca: {e}")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("🏛️ **Market Architect Pro v1.0**")
+st.sidebar.caption("Handcrafted by **Miguel Calle Romero**")
+st.sidebar.caption("Trenton, NJ | 2026")
 
 st.markdown("---")
 
