@@ -1,58 +1,41 @@
-import os
 import requests
+import pandas as pd
 from textblob import TextBlob
-from dotenv import load_dotenv
+from datetime import datetime, timedelta
+import streamlit as st
 
-load_dotenv()
+
+def get_finnhub_news(symbol):
+    """Obtiene noticias institucionales de Finnhub (Gratis y Pro)."""
+    api_key = st.secrets["FINNHUB_API_KEY"]
+
+    # Buscamos noticias de la última semana
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    url = f"https://finnhub.io/api/v1/company-news?symbol={symbol}&from={from_date}&to={to_date}&token={api_key}"
+
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    return []
 
 
-def get_market_sentiment(ticker):
-    """
-    EL ORÁCULO DE SENTIMIENTO.
-    Busca las últimas noticias financieras sobre el ticker y realiza
-    un análisis de polaridad (positivo/negativo/neutral).
-    """
-    api_key = os.getenv("NEWS_API_KEY")
-    if not api_key:
-        return "⚠️ Clave de NewsAPI no configurada en .env", 0.0
+def analyze_sentiment(news_list):
+    """Analiza el sentimiento de los titulares de Finnhub."""
+    if not news_list:
+        return 0, "Neutral"
 
-    # Buscamos noticias relevantes al ticker de las últimas semanas
-    url = f"https://newsapi.org/v2/everything?q={ticker} stock market&sortBy=relevancy&language=en&pageSize=15&apiKey={api_key}"
+    sentiments = []
+    for item in news_list[:15]:  # Analizamos los últimos 15 titulares
+        analysis = TextBlob(item["headline"])
+        sentiments.append(analysis.sentiment.polarity)
 
-    try:
-        response = requests.get(url)
-        data = response.json()
+    avg_sentiment = sum(sentiments) / len(sentiments)
 
-        if data.get("status") != "ok":
-            return f"❌ Error API: {data.get('message', 'Desconocido')}", 0.0
-
-        articles = data.get("articles", [])
-        if not articles:
-            return f"📭 No se encontraron noticias recientes para {ticker}.", 0.0
-
-        # Procesamiento de Lenguaje Natural (NLP) con TextBlob
-        polaridad_total = 0
-        for article in articles:
-            titulo = article.get("title", "")
-            descripcion = article.get("description", "")
-            # Analizamos título y descripción juntos
-            texto_completo = f"{titulo}. {descripcion}"
-            blob = TextBlob(texto_completo)
-            polaridad_total += blob.sentiment.polarity
-
-        polaridad_promedio = polaridad_total / len(articles)
-
-        # Clasificación del sentimiento
-        if polaridad_promedio > 0.15:
-            sentimiento = "🟢 Euforia / Positivo"
-        elif polaridad_promedio < -0.05:
-            # Los mercados financieros tienen un sesgo positivo natural,
-            # por lo que un número ligeramente negativo ya indica pánico o pesimismo.
-            sentimiento = "🔴 Pánico / Negativo"
-        else:
-            sentimiento = "⚖️ Neutral / Consolidación"
-
-        return sentimiento, polaridad_promedio
-
-    except Exception as e:
-        return f"🔌 Error de conexión: {str(e)}", 0.0
+    if avg_sentiment > 0.15:
+        return avg_sentiment, "Bullish 🟢"
+    elif avg_sentiment < -0.15:
+        return avg_sentiment, "Bearish 🔴"
+    else:
+        return avg_sentiment, "Neutral 🟡"
